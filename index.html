@@ -25,6 +25,11 @@
           <button class="tab-button" type="button" data-document-type="invoice">Invoice</button>
         </div>
 
+        <div id="pdfImportNotice" class="pdf-import-notice" hidden>
+          <h2>PDF Import</h2>
+          <p>PDF ini tersimpan di history sebagai file. Gunakan Draft Baru untuk membuat invoice atau tanda terima yang bisa diedit.</p>
+        </div>
+
         <form id="documentForm" class="document-form">
           <section class="form-section">
             <div class="section-heading">
@@ -270,6 +275,10 @@
         <div class="section-heading">
           <h2>History Lokal</h2>
         </div>
+        <label class="upload-card wide history-import-card">
+          <span>Import PDF ke history</span>
+          <input type="file" id="importPdfInput" accept="application/pdf,.pdf">
+        </label>
         <div id="statusMessage" class="status-message" aria-live="polite"></div>
         <div id="historyList" class="history-list"></div>
       </aside>

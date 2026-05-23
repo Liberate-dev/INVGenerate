@@ -194,6 +194,26 @@ button {
   padding: 12px;
 }
 
+.pdf-import-notice {
+  margin: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--soft);
+}
+
+.pdf-import-notice h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+}
+
+.pdf-import-notice p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .form-section {
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
@@ -290,6 +310,10 @@ button {
 
 .upload-card.wide {
   min-height: 72px;
+}
+
+.history-import-card {
+  margin-bottom: 10px;
 }
 
 .upload-card input {
@@ -478,6 +502,47 @@ button {
   box-shadow: var(--shadow);
   transform: scale(var(--preview-scale, 1));
   transform-origin: top left;
+}
+
+.document-sheet.pdf-sheet {
+  padding: 28px;
+}
+
+.pdf-preview-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: calc(1123px - 56px);
+  min-height: 0;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.pdf-preview-header {
+  padding: 14px 16px;
+  border-bottom: 1px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.pdf-preview-header h2 {
+  margin: 0 0 5px;
+  font-size: 18px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.pdf-preview-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.pdf-preview-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #ffffff;
 }
 
 .document-content {

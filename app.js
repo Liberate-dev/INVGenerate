@@ -14,6 +14,8 @@
   };
 
   const form = document.getElementById("documentForm");
+  const documentTabs = document.querySelector(".document-tabs");
+  const pdfImportNotice = document.getElementById("pdfImportNotice");
   const sheet = document.getElementById("documentSheet");
   const sheetViewport = document.querySelector(".sheet-viewport");
   const sheetStage = document.getElementById("sheetStage");
@@ -46,6 +48,12 @@
   function bindEvents() {
     document.querySelectorAll("[data-document-type]").forEach((button) => {
       button.addEventListener("click", () => {
+        if (isPdfImport(current)) {
+          current = createDefaultDocument();
+          assetMode = false;
+          selectedAssetKey = "logo";
+          lastAutoWords = "";
+        }
         current.type = button.dataset.documentType;
         populateForm();
         renderAll();
@@ -75,6 +83,14 @@
 
       if (event.target.id === "transferFilesInput" && event.target.files.length) {
         await handleTransferFiles(Array.from(event.target.files));
+        event.target.value = "";
+      }
+    });
+
+    document.getElementById("importPdfInput").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      if (file) {
+        await handlePdfImport(file);
         event.target.value = "";
       }
     });
@@ -125,6 +141,12 @@
       const duplicateButton = event.target.closest("[data-duplicate-history]");
       if (duplicateButton) {
         duplicateHistoryDraft(duplicateButton.dataset.duplicateHistory);
+        return;
+      }
+
+      const downloadButton = event.target.closest("[data-download-history]");
+      if (downloadButton) {
+        downloadHistoryPdf(downloadButton.dataset.downloadHistory);
         return;
       }
 
@@ -274,6 +296,13 @@
   }
 
   function renderAll() {
+    if (isPdfImport(current)) {
+      renderPdfImportMode();
+      renderPreview();
+      renderHistory();
+      return;
+    }
+
     syncTypeVisibility();
     renderItemsEditor();
     renderTransferFiles();
@@ -284,6 +313,15 @@
   }
 
   function populateForm() {
+    if (isPdfImport(current)) {
+      renderPdfImportMode();
+      return;
+    }
+
+    form.hidden = false;
+    documentTabs.classList.remove("hidden");
+    pdfImportNotice.hidden = true;
+
     form.querySelectorAll("[data-field]").forEach((input) => {
       const value = getNested(current, input.dataset.field);
       input.value = value == null ? "" : value;
@@ -296,6 +334,10 @@
   }
 
   function syncTypeVisibility() {
+    if (isPdfImport(current)) {
+      return;
+    }
+
     const receiptMode = current.type === "receipt";
     document.querySelectorAll(".receipt-only").forEach((node) => {
       node.classList.toggle("hidden", !receiptMode);
@@ -376,7 +418,17 @@
   }
 
   function renderPreview() {
+    if (isPdfImport(current)) {
+      previewTitle.textContent = "PDF Import";
+      sheet.classList.add("pdf-sheet");
+      sheet.classList.remove("edit-assets");
+      sheet.innerHTML = renderPdfImportPreview();
+      schedulePreviewScaleUpdate();
+      return;
+    }
+
     previewTitle.textContent = current.type === "receipt" ? "Tanda Terima" : "Invoice";
+    sheet.classList.remove("pdf-sheet");
     const content = current.type === "receipt" ? renderReceiptDocument() : renderInvoiceDocument();
     sheet.innerHTML = `${content}${renderAssetLayer()}`;
     sheet.classList.toggle("edit-assets", assetMode);
@@ -510,6 +562,28 @@
       <footer class="doc-footer">
         <p>Dokumen ini dibuat sebagai bukti penerimaan dana dan disimpan untuk kebutuhan arsip serta akuntabilitas kegiatan. File bukti transfer, bila ada, disimpan sebagai referensi terpisah dalam arsip internal.</p>
       </footer>
+    `;
+  }
+
+  function renderPdfImportMode() {
+    form.hidden = true;
+    documentTabs.classList.add("hidden");
+    pdfImportNotice.hidden = false;
+    previewTitle.textContent = "PDF Import";
+    assetMode = false;
+    renderAssetMode();
+  }
+
+  function renderPdfImportPreview() {
+    return `
+      <div class="pdf-preview-shell">
+        <div class="pdf-preview-header">
+          <p class="eyebrow">Imported PDF</p>
+          <h2>${valueText(current.fileName, "Dokumen PDF")}</h2>
+          <p>${formatFileSize(current.size)} - tersimpan di history lokal</p>
+        </div>
+        <iframe class="pdf-preview-frame" src="${attr(current.dataUrl)}" title="${attr(current.fileName || "PDF import")}"></iframe>
+      </div>
     `;
   }
 
@@ -769,7 +843,48 @@
     }
   }
 
+  async function handlePdfImport(file) {
+    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+    if (!isPdf) {
+      setStatus("File import harus berupa PDF.", true);
+      return;
+    }
+
+    try {
+      const history = readHistory();
+      const now = new Date().toISOString();
+      const imported = {
+        id: createId(),
+        kind: "pdfImport",
+        createdAt: now,
+        updatedAt: now,
+        fileName: file.name,
+        title: stripPdfExtension(file.name),
+        size: file.size,
+        dataUrl: await readFileAsDataUrl(file)
+      };
+
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([imported, ...history]));
+      current = imported;
+      renderAll();
+      setStatus("PDF berhasil diimport ke history lokal.");
+    } catch (error) {
+      setStatus("Gagal import PDF. Kemungkinan localStorage penuh karena file terlalu besar.", true);
+    }
+  }
+
   async function exportDocument(format) {
+    if (isPdfImport(current)) {
+      if (format !== "pdf") {
+        setStatus("PDF import hanya bisa diunduh sebagai PDF. Gunakan dokumen generator untuk export PNG/JPG.", true);
+        return;
+      }
+
+      downloadDataUrl(current.dataUrl, current.fileName || "imported-document.pdf");
+      setStatus("PDF import berhasil diunduh.");
+      return;
+    }
+
     if (!window.html2canvas) {
       setStatus("Library export belum tersedia. Jalankan melalui server lokal dan pastikan folder vendor ada.", true);
       return;
@@ -823,6 +938,11 @@
   }
 
   function saveCurrentDraft() {
+    if (isPdfImport(current)) {
+      setStatus("PDF import sudah tersimpan di history. Gunakan Duplikat untuk membuat salinan.", false);
+      return;
+    }
+
     try {
       const history = readHistory();
       const now = new Date().toISOString();
@@ -849,7 +969,7 @@
       return;
     }
 
-    current = normalizeDocument(draft);
+    current = isPdfImport(draft) ? clone(draft) : normalizeDocument(draft);
     assetMode = false;
     selectedAssetKey = "logo";
     populateForm();
@@ -878,24 +998,40 @@
 
     try {
       const now = new Date().toISOString();
-      const duplicate = normalizeDocument(clone(draft));
+      const duplicate = isPdfImport(draft) ? clone(draft) : normalizeDocument(clone(draft));
       duplicate.id = createId();
       duplicate.createdAt = now;
       duplicate.updatedAt = now;
-      applyDuplicateNumber(duplicate);
+      if (isPdfImport(duplicate)) {
+        duplicate.title = duplicateTitle(duplicate.title || duplicate.fileName);
+        duplicate.fileName = duplicatePdfFileName(duplicate.fileName);
+      } else {
+        applyDuplicateNumber(duplicate);
+      }
 
       const nextHistory = [clone(duplicate), ...history];
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
 
-      current = normalizeDocument(duplicate);
+      current = isPdfImport(duplicate) ? clone(duplicate) : normalizeDocument(duplicate);
       assetMode = false;
       selectedAssetKey = "logo";
       populateForm();
       renderAll();
-      setStatus("Draft berhasil diduplikat dan dimuat untuk diedit.");
+      setStatus(isPdfImport(current) ? "PDF berhasil diduplikat dan dimuat." : "Draft berhasil diduplikat dan dimuat untuk diedit.");
     } catch (error) {
       setStatus("Gagal menduplikat. Kemungkinan localStorage penuh karena file upload terlalu besar.", true);
     }
+  }
+
+  function downloadHistoryPdf(id) {
+    const draft = readHistory().find((item) => item.id === id);
+    if (!isPdfImport(draft)) {
+      setStatus("File PDF tidak ditemukan.", true);
+      return;
+    }
+
+    downloadDataUrl(draft.dataUrl, draft.fileName || "imported-document.pdf");
+    setStatus("PDF import berhasil diunduh.");
   }
 
   function applyDuplicateNumber(draft) {
@@ -914,6 +1050,17 @@
     return clean.endsWith("-COPY") ? clean : `${clean}-COPY`;
   }
 
+  function duplicateTitle(value) {
+    const clean = String(value || "PDF Import").trim();
+    return clean.endsWith(" Copy") ? clean : `${clean} Copy`;
+  }
+
+  function duplicatePdfFileName(value) {
+    const clean = String(value || "imported-document.pdf").trim();
+    const base = stripPdfExtension(clean);
+    return `${duplicateTitle(base)}.pdf`;
+  }
+
   function renderHistory() {
     const history = readHistory();
     if (!history.length) {
@@ -923,6 +1070,27 @@
 
     historyList.innerHTML = history
       .map((draft) => {
+        if (isPdfImport(draft)) {
+          const updatedAt = draft.updatedAt ? formatDateTime(draft.updatedAt) : "-";
+
+          return `
+            <div class="history-row">
+              <div class="history-row-main">
+                <div>
+                  <div class="history-title">PDF Import ${escapeHtml(draft.title || draft.fileName || "")}</div>
+                  <div class="history-meta">${escapeHtml(draft.fileName || "Dokumen PDF")}<br>${formatFileSize(draft.size)} - ${updatedAt}</div>
+                </div>
+              </div>
+              <div class="history-actions">
+                <button class="button button-light button-small" type="button" data-load-history="${attr(draft.id)}">Muat</button>
+                <button class="button button-light button-small" type="button" data-download-history="${attr(draft.id)}">Unduh</button>
+                <button class="button button-light button-small" type="button" data-duplicate-history="${attr(draft.id)}">Duplikat</button>
+                <button class="button button-danger button-small" type="button" data-delete-history="${attr(draft.id)}">Hapus</button>
+              </div>
+            </div>
+          `;
+        }
+
         const title = draft.type === "invoice" ? "Invoice" : "Tanda Terima";
         const number = draft.type === "invoice" ? draft.invoice?.number : draft.receipt?.number;
         const amount = draft.type === "invoice" ? calculateInvoiceTotal(draft) : numberValue(draft.receipt?.amount);
@@ -977,6 +1145,10 @@
       };
     });
     return normalized;
+  }
+
+  function isPdfImport(entry) {
+    return Boolean(entry && entry.kind === "pdfImport");
   }
 
   function moveSelectedAssetLayer(direction) {
@@ -1276,6 +1448,10 @@
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "") || "dokumen";
+  }
+
+  function stripPdfExtension(value) {
+    return String(value || "Dokumen PDF").replace(/\.pdf$/i, "");
   }
 
   function createId() {
