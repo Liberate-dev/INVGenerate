@@ -15,6 +15,8 @@
 
   const form = document.getElementById("documentForm");
   const sheet = document.getElementById("documentSheet");
+  const sheetViewport = document.querySelector(".sheet-viewport");
+  const sheetStage = document.getElementById("sheetStage");
   const previewTitle = document.getElementById("previewTitle");
   const itemEditor = document.getElementById("invoiceItemsEditor");
   const historyList = document.getElementById("historyList");
@@ -29,6 +31,8 @@
   let assetMode = false;
   let selectedAssetKey = "logo";
   let lastAutoWords = "";
+  let previewScale = 1;
+  let scaleFrame = 0;
 
   init();
 
@@ -36,6 +40,7 @@
     bindEvents();
     populateForm();
     renderAll();
+    updatePreviewScale();
   }
 
   function bindEvents() {
@@ -191,6 +196,8 @@
     document.getElementById("resetAssetPositionButton").addEventListener("click", () => {
       resetSelectedAssetPosition();
     });
+
+    window.addEventListener("resize", schedulePreviewScaleUpdate);
   }
 
   function createDefaultDocument() {
@@ -374,6 +381,32 @@
     sheet.innerHTML = `${content}${renderAssetLayer()}`;
     sheet.classList.toggle("edit-assets", assetMode);
     bindAssetInteractions();
+    schedulePreviewScaleUpdate();
+  }
+
+  function schedulePreviewScaleUpdate() {
+    if (scaleFrame) {
+      window.cancelAnimationFrame(scaleFrame);
+    }
+    scaleFrame = window.requestAnimationFrame(() => {
+      scaleFrame = 0;
+      updatePreviewScale();
+    });
+  }
+
+  function updatePreviewScale() {
+    if (!sheetViewport || !sheetStage) {
+      return;
+    }
+
+    const viewportWidth = sheetViewport.clientWidth;
+    const style = window.getComputedStyle(sheetViewport);
+    const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+    const availableWidth = Math.max(280, viewportWidth - horizontalPadding);
+    previewScale = clamp(availableWidth / 794, 0.38, 1);
+    sheetStage.style.setProperty("--preview-scale", previewScale);
+    sheetStage.style.width = `${Math.round(794 * previewScale)}px`;
+    sheetStage.style.minHeight = `${Math.round(1123 * previewScale)}px`;
   }
 
   function renderReceiptDocument() {
@@ -660,8 +693,8 @@
     const sheetHeight = sheet.scrollHeight;
 
     function onPointerMove(moveEvent) {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
+      const dx = (moveEvent.clientX - startX) / previewScale;
+      const dy = (moveEvent.clientY - startY) / previewScale;
 
       if (resize) {
         asset.width = clamp(startWidth + dx, 32, 360);
