@@ -1,0 +1,13 @@
+{
+  "name": "generator-dokumen",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Generator invoice dan tanda terima lokal untuk panitia atau organisasi.",
+  "scripts": {
+    "serve": "python -m http.server 4173 --bind 127.0.0.1"
+  },
+  "dependencies": {
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.1"
+  }
+}

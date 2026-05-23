@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Generator Invoice dan Tanda Terima</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Generator Dokumen Lokal</p>
+        <h1>Invoice dan Tanda Terima</h1>
+      </div>
+      <div class="header-actions">
+        <button class="button button-light" id="newDraftButton" type="button">Draft Baru</button>
+        <button class="button button-primary" id="saveDraftButton" type="button">Simpan Draft</button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="panel form-panel">
+        <div class="document-tabs" role="tablist" aria-label="Jenis dokumen">
+          <button class="tab-button active" type="button" data-document-type="receipt">Tanda Terima</button>
+          <button class="tab-button" type="button" data-document-type="invoice">Invoice</button>
+        </div>
+
+        <form id="documentForm" class="document-form">
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Identitas Dokumen</h2>
+            </div>
+            <div class="field-grid two">
+              <label class="field receipt-only">
+                <span>Nomor tanda terima</span>
+                <input type="text" data-field="receipt.number" placeholder="TT-001/BEM/V/2026">
+              </label>
+              <label class="field invoice-only">
+                <span>Nomor invoice</span>
+                <input type="text" data-field="invoice.number" placeholder="INV-001/BEM/V/2026">
+              </label>
+              <label class="field receipt-only">
+                <span>Tanggal penerimaan</span>
+                <input type="date" data-field="receipt.date">
+              </label>
+              <label class="field invoice-only">
+                <span>Tanggal invoice</span>
+                <input type="date" data-field="invoice.date">
+              </label>
+              <label class="field invoice-only">
+                <span>Jatuh tempo</span>
+                <input type="date" data-field="invoice.dueDate">
+              </label>
+              <label class="field invoice-only">
+                <span>Status</span>
+                <select data-field="invoice.status">
+                  <option value="Belum Dibayar">Belum Dibayar</option>
+                  <option value="Menunggu Pembayaran">Menunggu Pembayaran</option>
+                  <option value="Lunas">Lunas</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Organisasi / Penerbit</h2>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span>Nama organisasi</span>
+                <input type="text" data-field="issuer.organization" placeholder="BEM Fakultas ...">
+              </label>
+              <label class="field">
+                <span>Nama PIC penerima/penerbit</span>
+                <input type="text" data-field="issuer.pic" placeholder="Nama lengkap PIC">
+              </label>
+              <label class="field">
+                <span>Jabatan PIC</span>
+                <input type="text" data-field="issuer.role" placeholder="Ketua Pelaksana / Bendahara">
+              </label>
+              <label class="field">
+                <span>Alamat organisasi</span>
+                <textarea data-field="issuer.address" rows="2" placeholder="Alamat sekretariat atau kampus"></textarea>
+              </label>
+              <div class="field-grid two">
+                <label class="field">
+                  <span>Email</span>
+                  <input type="email" data-field="issuer.email" placeholder="panitia@example.com">
+                </label>
+                <label class="field">
+                  <span>Telepon</span>
+                  <input type="text" data-field="issuer.phone" placeholder="08xx xxxx xxxx">
+                </label>
+              </div>
+              <div class="field-grid two invoice-only">
+                <label class="field">
+                  <span>Bank</span>
+                  <input type="text" data-field="issuer.bank" placeholder="BCA / Mandiri / ...">
+                </label>
+                <label class="field">
+                  <span>No. rekening</span>
+                  <input type="text" data-field="issuer.accountNumber" placeholder="1234567890">
+                </label>
+              </div>
+              <label class="field invoice-only">
+                <span>Nama rekening</span>
+                <input type="text" data-field="issuer.accountName" placeholder="Nama pemilik rekening">
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Sponsor / Pemberi Dana</h2>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span>Nama perusahaan sponsor</span>
+                <input type="text" data-field="sponsor.company" placeholder="PT Contoh Sponsor">
+              </label>
+              <label class="field">
+                <span>Nama PIC sponsor</span>
+                <input type="text" data-field="sponsor.pic" placeholder="Nama lengkap PIC">
+              </label>
+              <label class="field">
+                <span>Alamat sponsor</span>
+                <textarea data-field="sponsor.address" rows="2" placeholder="Alamat perusahaan"></textarea>
+              </label>
+              <div class="field-grid two">
+                <label class="field">
+                  <span>Email sponsor</span>
+                  <input type="email" data-field="sponsor.email" placeholder="sponsor@example.com">
+                </label>
+                <label class="field">
+                  <span>Telepon sponsor</span>
+                  <input type="text" data-field="sponsor.phone" placeholder="08xx xxxx xxxx">
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Kegiatan</h2>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span>Nama kegiatan</span>
+                <input type="text" data-field="event.name" placeholder="Nama event">
+              </label>
+              <label class="field">
+                <span>Tanggal kegiatan</span>
+                <input type="text" data-field="event.date" placeholder="25 Juni 2026">
+              </label>
+              <label class="field">
+                <span>Tujuan penggunaan dana</span>
+                <textarea data-field="event.purpose" rows="3" placeholder="Untuk kegiatan ..., tanggal ..."></textarea>
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section receipt-only">
+            <div class="section-heading">
+              <h2>Dana Diterima</h2>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span>Jumlah dana</span>
+                <input type="number" min="0" data-field="receipt.amount" placeholder="5000000">
+              </label>
+              <label class="field">
+                <span>Terbilang</span>
+                <textarea data-field="receipt.amountWords" rows="2" placeholder="Lima juta rupiah"></textarea>
+              </label>
+              <button class="button button-light button-full" id="fillWordsButton" type="button">Isi Terbilang Otomatis</button>
+              <label class="field">
+                <span>Nomor referensi transfer</span>
+                <input type="text" data-field="receipt.transferReference" placeholder="REF123456789">
+              </label>
+            </div>
+          </section>
+
+          <section class="form-section invoice-only">
+            <div class="section-heading with-action">
+              <h2>Item Invoice</h2>
+              <button class="button button-light button-small" id="addItemButton" type="button">Tambah Item</button>
+            </div>
+            <div id="invoiceItemsEditor" class="items-editor"></div>
+            <label class="field">
+              <span>Catatan pembayaran</span>
+              <textarea data-field="invoice.notes" rows="3" placeholder="Pembayaran dapat dilakukan ke rekening ..."></textarea>
+            </label>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Logo, Stempel, Tanda Tangan</h2>
+            </div>
+            <div class="asset-upload-grid">
+              <label class="upload-card">
+                <span>Logo</span>
+                <input type="file" accept="image/*" data-asset-upload="logo">
+              </label>
+              <label class="upload-card">
+                <span>Stempel</span>
+                <input type="file" accept="image/*" data-asset-upload="stamp">
+              </label>
+              <label class="upload-card">
+                <span>TTD Penerima/Penerbit</span>
+                <input type="file" accept="image/*" data-asset-upload="receiverSignature">
+              </label>
+              <label class="upload-card receipt-only">
+                <span>TTD Pemberi Dana</span>
+                <input type="file" accept="image/*" data-asset-upload="giverSignature">
+              </label>
+            </div>
+            <button class="button button-light button-full" id="assetModeButton" type="button">Atur Posisi Aset</button>
+            <div class="asset-controls" id="assetControls" hidden>
+              <p class="helper-text">Klik aset di preview, lalu geser atau resize. Mode ini hanya aktif saat tombol pengaturan menyala.</p>
+              <label class="field">
+                <span>Aset aktif</span>
+                <select id="selectedAssetSelect"></select>
+              </label>
+              <label class="field">
+                <span>Opacity</span>
+                <input id="assetOpacityInput" type="range" min="0.2" max="1" step="0.05">
+              </label>
+              <div class="button-row">
+                <button class="button button-light" id="assetFrontButton" type="button">Ke Depan</button>
+                <button class="button button-light" id="assetBackButton" type="button">Ke Belakang</button>
+              </div>
+              <button class="button button-light button-full" id="resetAssetPositionButton" type="button">Reset Posisi Aset</button>
+            </div>
+          </section>
+
+          <section class="form-section">
+            <div class="section-heading">
+              <h2>Referensi Bukti Transfer</h2>
+            </div>
+            <label class="upload-card wide">
+              <span>Upload file referensi</span>
+              <input type="file" id="transferFilesInput" multiple accept="image/*,.pdf">
+            </label>
+            <div id="transferFileList" class="file-list"></div>
+          </section>
+        </form>
+      </aside>
+
+      <section class="preview-panel">
+        <div class="preview-toolbar">
+          <div>
+            <p class="eyebrow">Preview Real Time</p>
+            <h2 id="previewTitle">Tanda Terima</h2>
+          </div>
+          <div class="export-actions">
+            <button class="button button-light" id="downloadPdfButton" type="button">Download PDF</button>
+            <button class="button button-light" id="downloadPngButton" type="button">PNG</button>
+            <button class="button button-light" id="downloadJpgButton" type="button">JPG</button>
+          </div>
+        </div>
+        <div class="sheet-viewport">
+          <article id="documentSheet" class="document-sheet"></article>
+        </div>
+      </section>
+
+      <aside class="panel history-panel">
+        <div class="section-heading">
+          <h2>History Lokal</h2>
+        </div>
+        <div id="statusMessage" class="status-message" aria-live="polite"></div>
+        <div id="historyList" class="history-list"></div>
+      </aside>
+    </main>
+
+    <script src="vendor/html2canvas.min.js"></script>
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
