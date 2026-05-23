@@ -14,6 +14,7 @@
       </div>
       <div class="header-actions">
         <button class="button button-light" id="newDraftButton" type="button">Draft Baru</button>
+        <button class="button button-light" id="importPdfHeaderButton" type="button">Import PDF</button>
         <button class="button button-primary" id="saveDraftButton" type="button">Simpan Draft</button>
       </div>
     </header>
@@ -272,13 +273,11 @@
       </section>
 
       <aside class="panel history-panel">
-        <div class="section-heading">
+        <div class="section-heading with-action">
           <h2>History Lokal</h2>
+          <button class="button button-light button-small" id="importPdfHistoryButton" type="button">Import PDF</button>
         </div>
-        <label class="upload-card wide history-import-card">
-          <span>Import PDF ke history</span>
-          <input type="file" id="importPdfInput" accept="application/pdf,.pdf">
-        </label>
+        <input class="file-input-hidden" type="file" id="importPdfInput" accept="application/pdf,.pdf">
         <div id="statusMessage" class="status-message" aria-live="polite"></div>
         <div id="historyList" class="history-list"></div>
       </aside>

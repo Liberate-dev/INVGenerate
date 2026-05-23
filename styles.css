@@ -140,6 +140,16 @@ button {
   width: 100%;
 }
 
+.file-input-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 340px minmax(520px, 1fr) 300px;
@@ -310,10 +320,6 @@ button {
 
 .upload-card.wide {
   min-height: 72px;
-}
-
-.history-import-card {
-  margin-bottom: 10px;
 }
 
 .upload-card input {

@@ -87,6 +87,8 @@
       }
     });
 
+    document.getElementById("importPdfHeaderButton").addEventListener("click", openPdfImportPicker);
+    document.getElementById("importPdfHistoryButton").addEventListener("click", openPdfImportPicker);
     document.getElementById("importPdfInput").addEventListener("change", async (event) => {
       const file = event.target.files[0];
       if (file) {
@@ -220,6 +222,10 @@
     });
 
     window.addEventListener("resize", schedulePreviewScaleUpdate);
+  }
+
+  function openPdfImportPicker() {
+    document.getElementById("importPdfInput").click();
   }
 
   function createDefaultDocument() {
