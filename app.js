@@ -275,6 +275,11 @@
         notes: "",
         items: [createInvoiceItem()]
       },
+      imported: {
+        sourceFileName: "",
+        sourceSize: 0,
+        rawText: ""
+      },
       assets: {
         logo: createAsset("logo"),
         stamp: createAsset("stamp"),
@@ -332,6 +337,7 @@
       const value = getNested(current, input.dataset.field);
       input.value = value == null ? "" : value;
     });
+    syncImportCopyVisibility();
     document.querySelectorAll("[data-document-type]").forEach((button) => {
       button.classList.toggle("active", button.dataset.documentType === current.type);
     });
@@ -345,12 +351,21 @@
     }
 
     const receiptMode = current.type === "receipt";
+    syncImportCopyVisibility();
     document.querySelectorAll(".receipt-only").forEach((node) => {
       node.classList.toggle("hidden", !receiptMode);
     });
     document.querySelectorAll(".invoice-only").forEach((node) => {
       node.classList.toggle("hidden", receiptMode);
     });
+  }
+
+  function syncImportCopyVisibility() {
+    const section = form.querySelector(".import-copy-section");
+    if (!section) {
+      return;
+    }
+    section.hidden = !current.imported?.sourceFileName && !current.imported?.rawText;
   }
 
   function renderItemsEditor() {
@@ -497,6 +512,8 @@
           <p>Yang bertanda tangan di bawah ini menyatakan bahwa dana sponsorship telah diterima dari ${strongText(current.sponsor.company, "Nama Sponsor")} melalui PIC ${strongText(current.sponsor.pic, "Nama PIC Sponsor")} untuk keperluan kegiatan yang tercantum dalam dokumen ini.</p>
         </section>
 
+        ${renderImportedCopySection()}
+
         <section class="doc-section parties-grid">
           <div class="party-card">
             <h3>Pemberi Dana</h3>
@@ -593,6 +610,20 @@
     `;
   }
 
+  function renderImportedCopySection() {
+    const rawText = current.imported?.rawText?.trim();
+    if (!rawText) {
+      return "";
+    }
+
+    return `
+      <section class="doc-section imported-copy">
+        <p class="section-label">Copy Hasil Import PDF</p>
+        <p>${multiline(rawText, "")}</p>
+      </section>
+    `;
+  }
+
   function renderInvoiceDocument() {
     const total = calculateInvoiceTotal();
     const paymentNote = current.invoice.notes || defaultPaymentNote();
@@ -633,6 +664,8 @@
             <p>${joinContact(current.issuer.email, current.issuer.phone)}</p>
           </div>
         </section>
+
+        ${renderImportedCopySection()}
 
         <section class="doc-section">
           <p class="section-label">Kegiatan</p>
@@ -859,21 +892,35 @@
     try {
       const history = readHistory();
       const now = new Date().toISOString();
-      const imported = {
-        id: createId(),
-        kind: "pdfImport",
-        createdAt: now,
-        updatedAt: now,
-        fileName: file.name,
-        title: stripPdfExtension(file.name),
-        size: file.size,
-        dataUrl: await readFileAsDataUrl(file)
+      const dataUrl = await readFileAsDataUrl(file);
+      const rawText = await extractPdfText(file);
+      const importedDraft = createDefaultDocument();
+      importedDraft.id = createId();
+      importedDraft.createdAt = now;
+      importedDraft.updatedAt = now;
+      importedDraft.imported = {
+        sourceFileName: file.name,
+        sourceSize: file.size,
+        rawText
       };
+      importedDraft.transferFiles = [
+        {
+          id: createId(),
+          name: file.name,
+          type: file.type || "application/pdf",
+          size: file.size,
+          dataUrl
+        }
+      ];
+      applyPdfTextGuesses(importedDraft, rawText, file.name);
 
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([imported, ...history]));
-      current = imported;
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([importedDraft, ...history]));
+      current = normalizeDocument(importedDraft);
+      assetMode = false;
+      selectedAssetKey = "logo";
+      populateForm();
       renderAll();
-      setStatus("PDF berhasil diimport ke history lokal.");
+      setStatus(rawText ? "PDF berhasil diimport. Copy hasil ekstraksi bisa diedit di form." : "PDF berhasil diimport sebagai referensi, tetapi teks tidak terbaca otomatis.");
     } catch (error) {
       setStatus("Gagal import PDF. Kemungkinan localStorage penuh karena file terlalu besar.", true);
     }
@@ -1144,6 +1191,12 @@
     if (!Array.isArray(normalized.transferFiles)) {
       normalized.transferFiles = [];
     }
+    normalized.imported = {
+      sourceFileName: "",
+      sourceSize: 0,
+      rawText: "",
+      ...(normalized.imported || {})
+    };
     Object.keys(ASSET_LABELS).forEach((key) => {
       normalized.assets[key] = {
         ...createAsset(key),
@@ -1397,6 +1450,96 @@
 
   function getNested(target, path) {
     return path.split(".").reduce((cursor, part) => (cursor ? cursor[part] : undefined), target);
+  }
+
+  async function extractPdfText(file) {
+    if (!file.arrayBuffer) {
+      return "";
+    }
+
+    try {
+      const pdfjs = await import("./vendor/pdf.min.mjs");
+      pdfjs.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
+      const documentProxy = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+      const pages = [];
+
+      for (let pageNumber = 1; pageNumber <= documentProxy.numPages; pageNumber += 1) {
+        const page = await documentProxy.getPage(pageNumber);
+        const textContent = await page.getTextContent();
+        const lines = textContent.items
+          .map((item) => String(item.str || "").trim())
+          .filter(Boolean);
+        pages.push(lines.join(" "));
+      }
+
+      return cleanupExtractedText(pages.join("\n\n"));
+    } catch (error) {
+      console.warn("PDF text extraction failed", error);
+      return "";
+    }
+  }
+
+  function cleanupExtractedText(value) {
+    return String(value || "")
+      .replace(/[ \t]+/g, " ")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function applyPdfTextGuesses(draft, rawText, fileName) {
+    const text = cleanupExtractedText(rawText);
+    const compact = text.replace(/\s+/g, " ");
+    draft.type = /invoice|tagihan/i.test(compact) ? "invoice" : "receipt";
+
+    const docNumber = matchFirst(compact, [
+      /(?:no\.?|nomor|number)\s*(?:invoice|kwitansi|tanda terima|dokumen)?\s*[:#-]?\s*([A-Z0-9][A-Z0-9/.\-_]{2,})/i,
+      /(?:invoice|kwitansi)\s*[:#-]?\s*([A-Z0-9][A-Z0-9/.\-_]{2,})/i
+    ]);
+    if (draft.type === "invoice") {
+      draft.invoice.number = docNumber;
+      draft.invoice.notes = text ? `Copy import dari ${fileName}. Silakan rapikan field berdasarkan teks hasil import.` : "";
+    } else {
+      draft.receipt.number = docNumber;
+    }
+
+    const email = matchFirst(compact, [/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i]);
+    const phone = matchFirst(compact, [/(?:\+?62|0)\d[\d\s().-]{7,}\d/i]);
+    draft.issuer.email = email;
+    draft.issuer.phone = phone;
+
+    const amount = extractLargestMoneyValue(compact);
+    if (amount) {
+      if (draft.type === "invoice") {
+        draft.invoice.items = [
+          {
+            description: `Import dari ${stripPdfExtension(fileName)}`,
+            quantity: "1",
+            unitPrice: String(amount)
+          }
+        ];
+      } else {
+        draft.receipt.amount = String(amount);
+        draft.receipt.amountWords = numberToWordsId(amount);
+      }
+    }
+  }
+
+  function matchFirst(value, patterns) {
+    for (const pattern of patterns) {
+      const match = value.match(pattern);
+      if (match) {
+        return (match[1] || match[0] || "").trim();
+      }
+    }
+    return "";
+  }
+
+  function extractLargestMoneyValue(value) {
+    const matches = String(value || "").match(/(?:rp\.?\s*)?\d{1,3}(?:[.,]\d{3})+(?:,\d{2})?|(?:rp\.?\s*)?\d{5,}/gi) || [];
+    return matches.reduce((largest, match) => {
+      const numeric = Number(String(match).replace(/rp\.?/i, "").replace(/[^\d]/g, ""));
+      return Number.isFinite(numeric) && numeric > largest ? numeric : largest;
+    }, 0);
   }
 
   function readFileAsDataUrl(file) {

@@ -28,10 +28,20 @@
 
         <div id="pdfImportNotice" class="pdf-import-notice" hidden>
           <h2>PDF Import</h2>
-          <p>PDF ini tersimpan di history sebagai file. Gunakan Draft Baru untuk membuat invoice atau tanda terima yang bisa diedit.</p>
+          <p>PDF ini tersimpan sebagai referensi. Teks yang terbaca dari PDF bisa diedit di draft.</p>
         </div>
 
         <form id="documentForm" class="document-form">
+          <section class="form-section import-copy-section" hidden>
+            <div class="section-heading">
+              <h2>Copy hasil import PDF</h2>
+            </div>
+            <label class="field">
+              <span>Teks PDF yang bisa diedit</span>
+              <textarea data-field="imported.rawText" rows="8" placeholder="Teks hasil ekstraksi PDF akan muncul di sini."></textarea>
+            </label>
+          </section>
+
           <section class="form-section">
             <div class="section-heading">
               <h2>Identitas Dokumen</h2>

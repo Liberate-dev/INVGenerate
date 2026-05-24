@@ -224,6 +224,13 @@ button {
   line-height: 1.45;
 }
 
+.import-copy-section {
+  background: #f7fbff;
+  margin: 0 -12px;
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
 .form-section {
   padding: 14px 0;
   border-bottom: 1px solid var(--line);
