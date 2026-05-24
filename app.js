@@ -893,15 +893,17 @@
       const history = readHistory();
       const now = new Date().toISOString();
       const dataUrl = await readFileAsDataUrl(file);
-      const rawText = await extractPdfText(file);
-      const importedDraft = createDefaultDocument();
+      const extractedText = await extractPdfText(file);
+      const restoredDraft = parseEmbeddedDraftData(extractedText);
+      const rawText = removeEmbeddedDraftData(extractedText);
+      const importedDraft = restoredDraft ? normalizeDocument(restoredDraft) : createDefaultDocument();
       importedDraft.id = createId();
       importedDraft.createdAt = now;
       importedDraft.updatedAt = now;
       importedDraft.imported = {
         sourceFileName: file.name,
         sourceSize: file.size,
-        rawText
+        rawText: rawText || importedDraft.imported?.rawText || ""
       };
       importedDraft.transferFiles = [
         {
@@ -912,7 +914,9 @@
           dataUrl
         }
       ];
-      applyPdfTextGuesses(importedDraft, rawText, file.name);
+      if (!restoredDraft) {
+        applyPdfTextGuesses(importedDraft, rawText, file.name);
+      }
 
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify([importedDraft, ...history]));
       current = normalizeDocument(importedDraft);
@@ -920,7 +924,7 @@
       selectedAssetKey = "logo";
       populateForm();
       renderAll();
-      setStatus(rawText ? "PDF berhasil diimport. Copy hasil ekstraksi bisa diedit di form." : "PDF berhasil diimport sebagai referensi, tetapi teks tidak terbaca otomatis.");
+      setStatus(restoredDraft ? "PDF generator berhasil direstore sebagai draft yang bisa diedit." : rawText ? "PDF berhasil diimport. Copy hasil ekstraksi bisa diedit di form." : "PDF berhasil diimport sebagai referensi, tetapi teks tidak terbaca otomatis.");
     } catch (error) {
       setStatus("Gagal import PDF. Kemungkinan localStorage penuh karena file terlalu besar.", true);
     }
@@ -987,7 +991,54 @@
     const imgData = canvas.toDataURL("image/jpeg", 0.98);
 
     pdf.addImage(imgData, "JPEG", 0, 0, pageWidth, pageHeight);
+    embedDraftDataInPdf(pdf);
     pdf.save(filename);
+  }
+
+  function embedDraftDataInPdf(pdf) {
+    const payload = createEmbeddedDraftPayload();
+    if (!payload) {
+      return;
+    }
+
+    const markerStart = "GDOC_JSON_START";
+    const markerEnd = "GDOC_JSON_END";
+    const chunks = payload.match(/.{1,90}/g) || [];
+
+    if (typeof pdf.addMetadata === "function") {
+      pdf.addMetadata(`${markerStart}${payload}${markerEnd}`);
+    }
+    if (typeof pdf.setProperties === "function") {
+      pdf.setProperties({
+        title: createDownloadName("pdf"),
+        subject: "Generator Dokumen editable draft",
+        keywords: `${markerStart}${payload}${markerEnd}`
+      });
+    }
+
+    pdf.setFontSize(1);
+    pdf.setTextColor(255, 255, 255);
+    [markerStart, ...chunks, markerEnd].forEach((line, index) => {
+      pdf.text(line, 1, 286 + index * 1.2);
+    });
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  function createEmbeddedDraftPayload() {
+    try {
+      const portable = clone(current);
+      portable.transferFiles = [];
+      Object.keys(portable.assets || {}).forEach((key) => {
+        portable.assets[key] = {
+          ...portable.assets[key],
+          name: portable.assets[key]?.name || "",
+          dataUrl: ""
+        };
+      });
+      return window.btoa(unescape(encodeURIComponent(JSON.stringify(portable))));
+    } catch {
+      return "";
+    }
   }
 
   function saveCurrentDraft() {
@@ -1462,6 +1513,7 @@
       pdfjs.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.mjs";
       const documentProxy = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
       const pages = [];
+      const metadataText = await extractPdfMetadataText(documentProxy);
 
       for (let pageNumber = 1; pageNumber <= documentProxy.numPages; pageNumber += 1) {
         const page = await documentProxy.getPage(pageNumber);
@@ -1472,9 +1524,31 @@
         pages.push(lines.join(" "));
       }
 
-      return cleanupExtractedText(pages.join("\n\n"));
+      return cleanupExtractedText([metadataText, ...pages].filter(Boolean).join("\n\n"));
     } catch (error) {
       console.warn("PDF text extraction failed", error);
+      return "";
+    }
+  }
+
+  async function extractPdfMetadataText(documentProxy) {
+    try {
+      const metadata = await documentProxy.getMetadata();
+      const parts = [];
+      Object.values(metadata.info || {}).forEach((value) => {
+        if (typeof value === "string") {
+          parts.push(value);
+        }
+      });
+      if (metadata.metadata && typeof metadata.metadata.getAll === "function") {
+        Object.values(metadata.metadata.getAll()).forEach((value) => {
+          if (typeof value === "string") {
+            parts.push(value);
+          }
+        });
+      }
+      return parts.join("\n");
+    } catch {
       return "";
     }
   }
@@ -1484,6 +1558,25 @@
       .replace(/[ \t]+/g, " ")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+  }
+
+  function parseEmbeddedDraftData(value) {
+    const match = String(value || "").match(/GDOC_JSON_START\s*([A-Za-z0-9+/=\s]+?)\s*GDOC_JSON_END/);
+    if (!match) {
+      return null;
+    }
+
+    try {
+      const encoded = match[1].replace(/\s+/g, "");
+      return JSON.parse(decodeURIComponent(escape(window.atob(encoded))));
+    } catch (error) {
+      console.warn("Embedded draft payload could not be parsed", error);
+      return null;
+    }
+  }
+
+  function removeEmbeddedDraftData(value) {
+    return cleanupExtractedText(String(value || "").replace(/GDOC_JSON_START\s*[A-Za-z0-9+/=\s]+?\s*GDOC_JSON_END/g, ""));
   }
 
   function applyPdfTextGuesses(draft, rawText, fileName) {
