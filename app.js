@@ -1,5 +1,8 @@
 (function () {
   const STORAGE_KEY = "generator-dokumen-history-v1";
+  const DB_NAME = "GeneratorDokumenDB";
+  const DB_VERSION = 1;
+  const STORE_NAME = "history";
   const ASSET_LABELS = {
     logo: "Logo",
     stamp: "Stempel",
@@ -29,6 +32,25 @@
   const selectedAssetSelect = document.getElementById("selectedAssetSelect");
   const assetOpacityInput = document.getElementById("assetOpacityInput");
 
+  let db = null;
+
+  async function initDb() {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(DB_NAME, DB_VERSION);
+      request.onupgradeneeded = (event) => {
+        const database = event.target.result;
+        if (!database.objectStoreNames.contains(STORE_NAME)) {
+          database.createObjectStore(STORE_NAME);
+        }
+      };
+      request.onsuccess = (event) => {
+        db = event.target.result;
+        resolve(db);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   let current = createDefaultDocument();
   let assetMode = false;
   let selectedAssetKey = "logo";
@@ -38,7 +60,8 @@
 
   init();
 
-  function init() {
+  async function init() {
+    await initDb();
     bindEvents();
     populateForm();
     renderAll();
@@ -890,7 +913,6 @@
     }
 
     try {
-      const history = readHistory();
       const now = new Date().toISOString();
       const dataUrl = await readFileAsDataUrl(file);
       const extractedText = await extractPdfText(file);
@@ -918,7 +940,8 @@
         applyPdfTextGuesses(importedDraft, rawText, file.name);
       }
 
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify([importedDraft, ...history]));
+      db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(importedDraft, importedDraft.id);
+
       current = normalizeDocument(importedDraft);
       assetMode = false;
       selectedAssetKey = "logo";
@@ -926,7 +949,7 @@
       renderAll();
       setStatus(restoredDraft ? "PDF generator berhasil direstore sebagai draft yang bisa diedit." : rawText ? "PDF berhasil diimport. Copy hasil ekstraksi bisa diedit di form." : "PDF berhasil diimport sebagai referensi, tetapi teks tidak terbaca otomatis.");
     } catch (error) {
-      setStatus("Gagal import PDF. Kemungkinan localStorage penuh karena file terlalu besar.", true);
+      setStatus("Gagal import PDF: " + error.message, true);
     }
   }
 
@@ -1048,7 +1071,6 @@
     }
 
     try {
-      const history = readHistory();
       const now = new Date().toISOString();
       if (!current.id) {
         current.id = createId();
@@ -1057,28 +1079,43 @@
       current.updatedAt = now;
 
       const saved = clone(current);
+      db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(saved, current.id);
+
+      const oldStored = localStorage.getItem(STORAGE_KEY);
+      let history = [];
+      if (oldStored) {
+        history = JSON.parse(oldStored);
+      }
       const nextHistory = [saved, ...history.filter((item) => item.id !== current.id)];
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+
       renderHistory();
-      setStatus("Draft berhasil disimpan di localStorage.");
+      setStatus("Draft berhasil disimpan.");
     } catch (error) {
-      setStatus("Gagal menyimpan. Kemungkinan localStorage penuh karena file upload terlalu besar.", true);
+      setStatus("Gagal menyimpan: " + error.message, true);
     }
   }
 
   function loadHistoryDraft(id) {
-    const draft = readHistory().find((item) => item.id === id);
-    if (!draft) {
-      setStatus("Draft tidak ditemukan.", true);
-      return;
-    }
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).get(id);
+    
+    request.onsuccess = () => {
+      const draft = request.result;
+      if (!draft) {
+        setStatus("Draft tidak ditemukan.", true);
+        return;
+      }
 
-    current = isPdfImport(draft) ? clone(draft) : normalizeDocument(draft);
-    assetMode = false;
-    selectedAssetKey = "logo";
-    populateForm();
-    renderAll();
-    setStatus("Draft berhasil dimuat.");
+      current = isPdfImport(draft) ? clone(draft) : normalizeDocument(draft);
+      assetMode = false;
+      selectedAssetKey = "logo";
+      populateForm();
+      renderAll();
+      setStatus("Draft berhasil dimuat.");
+    };
+    
+    request.onerror = () => setStatus("Gagal memuat draft.", true);
   }
 
   function deleteHistoryDraft(id) {
@@ -1086,56 +1123,71 @@
       return;
     }
 
-    const nextHistory = readHistory().filter((item) => item.id !== id);
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
-    renderHistory();
-    setStatus("Draft dihapus dari history.");
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    tx.objectStore(STORE_NAME).delete(id);
+    tx.oncomplete = () => {
+      renderHistory();
+      setStatus("Draft dihapus dari history.");
+    };
+    tx.onerror = () => setStatus("Gagal menghapus draft.", true);
   }
 
   function duplicateHistoryDraft(id) {
-    const history = readHistory();
-    const draft = history.find((item) => item.id === id);
-    if (!draft) {
-      setStatus("Draft tidak ditemukan.", true);
-      return;
-    }
-
-    try {
-      const now = new Date().toISOString();
-      const duplicate = isPdfImport(draft) ? clone(draft) : normalizeDocument(clone(draft));
-      duplicate.id = createId();
-      duplicate.createdAt = now;
-      duplicate.updatedAt = now;
-      if (isPdfImport(duplicate)) {
-        duplicate.title = duplicateTitle(duplicate.title || duplicate.fileName);
-        duplicate.fileName = duplicatePdfFileName(duplicate.fileName);
-      } else {
-        applyDuplicateNumber(duplicate);
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).get(id);
+    
+    request.onsuccess = () => {
+      const draft = request.result;
+      if (!draft) {
+        setStatus("Draft tidak ditemukan.", true);
+        return;
       }
 
-      const nextHistory = [clone(duplicate), ...history];
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextHistory));
+      try {
+        const now = new Date().toISOString();
+        const duplicate = isPdfImport(draft) ? clone(draft) : normalizeDocument(clone(draft));
+        duplicate.id = createId();
+        duplicate.createdAt = now;
+        duplicate.updatedAt = now;
+        if (isPdfImport(duplicate)) {
+          duplicate.title = duplicateTitle(duplicate.title || duplicate.fileName);
+          duplicate.fileName = duplicatePdfFileName(duplicate.fileName);
+        } else {
+          applyDuplicateNumber(duplicate);
+        }
 
-      current = isPdfImport(duplicate) ? clone(duplicate) : normalizeDocument(duplicate);
-      assetMode = false;
-      selectedAssetKey = "logo";
-      populateForm();
-      renderAll();
-      setStatus(isPdfImport(current) ? "PDF berhasil diduplikat dan dimuat." : "Draft berhasil diduplikat dan dimuat untuk diedit.");
-    } catch (error) {
-      setStatus("Gagal menduplikat. Kemungkinan localStorage penuh karena file upload terlalu besar.", true);
-    }
+        db.transaction(STORE_NAME, "readwrite").objectStore(STORE_NAME).put(duplicate, duplicate.id);
+
+        current = isPdfImport(duplicate) ? clone(duplicate) : normalizeDocument(duplicate);
+        assetMode = false;
+        selectedAssetKey = "logo";
+        populateForm();
+        renderAll();
+        setStatus(isPdfImport(current) ? "PDF berhasil diduplikat dan dimuat." : "Draft berhasil diduplikat dan dimuat untuk diedit.");
+      } catch (error) {
+        setStatus("Gagal menduplikat: " + error.message, true);
+      }
+    };
+    
+    request.onerror = () => setStatus("Gagal memuat draft.", true);
   }
 
   function downloadHistoryPdf(id) {
-    const draft = readHistory().find((item) => item.id === id);
-    if (!isPdfImport(draft)) {
-      setStatus("File PDF tidak ditemukan.", true);
-      return;
-    }
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const request = tx.objectStore(STORE_NAME).get(id);
+    
+    request.onsuccess = () => {
+      const draft = request.result;
+      if (!isPdfImport(draft)) {
+        setStatus("File PDF tidak ditemukan.", true);
+        return;
+      }
 
-    downloadDataUrl(draft.dataUrl, draft.fileName || "imported-document.pdf");
-    setStatus("PDF import berhasil diunduh.");
+      downloadDataUrl(draft.dataUrl, draft.fileName || "imported-document.pdf");
+      setStatus("PDF import berhasil diunduh.");
+    };
+    
+    request.onerror = () => setStatus("Gagal memuat file PDF.", true);
   }
 
   function applyDuplicateNumber(draft) {
@@ -1166,72 +1218,77 @@
   }
 
   function renderHistory() {
-    const history = readHistory();
-    if (!history.length) {
-      historyList.innerHTML = '<p class="helper-text">Belum ada history. Klik Simpan Draft untuk menyimpan dokumen.</p>';
-      return;
-    }
-
-    historyList.innerHTML = history
-      .map((draft) => {
-        if (isPdfImport(draft)) {
-          const updatedAt = draft.updatedAt ? formatDateTime(draft.updatedAt) : "-";
-
-          return `
-            <div class="history-row">
-              <div class="history-row-main">
-                <div>
-                  <div class="history-title">PDF Import ${escapeHtml(draft.title || draft.fileName || "")}</div>
-                  <div class="history-meta">${escapeHtml(draft.fileName || "Dokumen PDF")}<br>${formatFileSize(draft.size)} - ${updatedAt}</div>
-                </div>
-              </div>
-              <div class="history-actions">
-                <button class="button button-light button-small" type="button" data-load-history="${attr(draft.id)}">Muat</button>
-                <button class="button button-light button-small" type="button" data-download-history="${attr(draft.id)}">Unduh</button>
-                <button class="button button-light button-small" type="button" data-duplicate-history="${attr(draft.id)}">Duplikat</button>
-                <button class="button button-danger button-small" type="button" data-delete-history="${attr(draft.id)}">Hapus</button>
-              </div>
-            </div>
-          `;
+    const history = [];
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const request = store.openCursor();
+    
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        history.push(cursor.value);
+        cursor.continue();
+      } else {
+        if (!history.length) {
+          historyList.innerHTML = '<p class="helper-text">Belum ada history. Klik Simpan Draft untuk menyimpan dokumen.</p>';
+          return;
         }
 
-        const title = draft.type === "invoice" ? "Invoice" : "Tanda Terima";
-        const number = draft.type === "invoice" ? draft.invoice?.number : draft.receipt?.number;
-        const amount = draft.type === "invoice" ? calculateInvoiceTotal(draft) : numberValue(draft.receipt?.amount);
-        const sponsor = draft.sponsor?.company || "Sponsor belum diisi";
-        const updatedAt = draft.updatedAt ? formatDateTime(draft.updatedAt) : "-";
+        historyList.innerHTML = history
+          .map((draft) => {
+            if (isPdfImport(draft)) {
+              const updatedAt = draft.updatedAt ? formatDateTime(draft.updatedAt) : "-";
 
-        return `
-          <div class="history-row">
-            <div class="history-row-main">
-              <div>
-                <div class="history-title">${escapeHtml(title)} ${escapeHtml(number || "")}</div>
-                <div class="history-meta">${escapeHtml(sponsor)}<br>${formatCurrency(amount)} - ${updatedAt}</div>
+              return `
+                <div class="history-row">
+                  <div class="history-row-main">
+                    <div>
+                      <div class="history-title">PDF Import ${escapeHtml(draft.title || draft.fileName || "")}</div>
+                      <div class="history-meta">${escapeHtml(draft.fileName || "Dokumen PDF")}<br>${formatFileSize(draft.size)} - ${updatedAt}</div>
+                    </div>
+                  </div>
+                  <div class="history-actions">
+                    <button class="button button-light button-small" type="button" data-load-history="${attr(draft.id)}">Muat</button>
+                    <button class="button button-light button-small" type="button" data-download-history="${attr(draft.id)}">Unduh</button>
+                    <button class="button button-light button-small" type="button" data-duplicate-history="${attr(draft.id)}">Duplikat</button>
+                    <button class="button button-danger button-small" type="button" data-delete-history="${attr(draft.id)}">Hapus</button>
+                  </div>
+                </div>
+              `;
+            }
+
+            const title = draft.type === "invoice" ? "Invoice" : "Tanda Terima";
+            const number = draft.type === "invoice" ? draft.invoice?.number : draft.receipt?.number;
+            const amount = draft.type === "invoice" ? calculateInvoiceTotal(draft) : numberValue(draft.receipt?.amount);
+            const sponsor = draft.sponsor?.company || "Sponsor belum diisi";
+            const updatedAt = draft.updatedAt ? formatDateTime(draft.updatedAt) : "-";
+
+            return `
+              <div class="history-row">
+                <div class="history-row-main">
+                  <div>
+                    <div class="history-title">${escapeHtml(title)} ${escapeHtml(number || "")}</div>
+                    <div class="history-meta">${escapeHtml(sponsor)}<br>${formatCurrency(amount)} - ${updatedAt}</div>
+                  </div>
+                </div>
+                <div class="history-actions">
+                  <button class="button button-light button-small" type="button" data-load-history="${attr(draft.id)}">Muat</button>
+                  <button class="button button-light button-small" type="button" data-duplicate-history="${attr(draft.id)}">Duplikat</button>
+                  <button class="button button-danger button-small" type="button" data-delete-history="${attr(draft.id)}">Hapus</button>
+                </div>
               </div>
-            </div>
-            <div class="history-actions">
-              <button class="button button-light button-small" type="button" data-load-history="${attr(draft.id)}">Muat</button>
-              <button class="button button-light button-small" type="button" data-duplicate-history="${attr(draft.id)}">Duplikat</button>
-              <button class="button button-danger button-small" type="button" data-delete-history="${attr(draft.id)}">Hapus</button>
-            </div>
-          </div>
-        `;
-      })
-      .join("");
+            `;
+          })
+          .join("");
+      }
+    };
+    
+    request.onerror = () => {
+      historyList.innerHTML = '<p class="helper-text">Gagal memuat history.</p>';
+    };
   }
 
-  function readHistory() {
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        return [];
-      }
-      const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch {
-      return [];
-    }
-  }
+
 
   function normalizeDocument(draft) {
     const base = createDefaultDocument();
